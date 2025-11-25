@@ -8,3 +8,27 @@
 	vertical-align: middle;
 	padding-right: 0.25em;
 }
+
+.section_toggle {
+	cursor: pointer;
+	display: inline-block;
+	border-radius: 4px;
+}
+
+.section_toggle:hover {
+	background-color: #337AB7;
+	color: #ffffff;
+}
+
+.section_toggle span {
+	display: none;
+}
+
+/* Hide the exclusion marker spans */
+.stoggle_exclude_start,
+.stoggle_exclude_end {
+	display: none !important;
+}
+
+/* Headers marked as excluded from collapse will not have toggle behavior */
+/* The stoggle_no_collapse class is added dynamically by JavaScript */

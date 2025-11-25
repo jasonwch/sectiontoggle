@@ -13,6 +13,7 @@ class action_plugin_sectiontoggle extends DokuWiki_Action_Plugin {
      */
     function register(Doku_Event_Handler $controller) {
         $controller->register_hook('DOKUWIKI_STARTED', 'AFTER', $this, '_jsinfo');
+        $controller->register_hook('MENU_ITEMS_ASSEMBLY', 'AFTER', $this, 'add_button_toggle', array());
     }
 
     /**
@@ -75,10 +76,11 @@ class action_plugin_sectiontoggle extends DokuWiki_Action_Plugin {
        $JSINFO['start_open'] = $this->getConf('start_open');
       
            $JSINFO['se_device'] = trim($this->device_type()) ;
-           $acl = auth_quickaclcheck($ID);           
-           if($JSINFO['se_device'] == 'phone' || $acl < AUTH_EDIT) {
-               $JSINFO['start_open'] = 0;
-           }               
+			//Skip ACL and mobile check enforcing collapse - Jason
+           //$acl = auth_quickaclcheck($ID);           
+           //if($JSINFO['se_device'] == 'phone' || $acl < AUTH_EDIT) {
+           //    $JSINFO['start_open'] = 0;
+           //}               
           // msg($JSINFO['se_device']);
 		      if($p != 'all')
               {
@@ -129,10 +131,17 @@ class action_plugin_sectiontoggle extends DokuWiki_Action_Plugin {
        }
     }
     function device_type() {
-        require_once 'Mobile_Detect.php';
-        $detect = new Mobile_Detect;
-        $deviceType = ($detect->isMobile() ? ($detect->isTablet() ? 'tablet' : 'phone') : 'computer');
+		//Upgrade mobile detect to v3.74.3 - Jason							
+        //require_once 'Mobile_Detect.php';
+        //$detect = new Mobile_Detect;
+        //$deviceType = ($detect->isMobile() ? ($detect->isTablet() ? 'tablet' : 'phone') : 'computer');
        
+		require_once 'MobileDetect.php';
+	    $detect = new \Detection\MobileDetect;
+		$deviceType = ($detect->isMobile() ? ($detect->isTablet() ? 'tablet' : 'phone') : 'computer');
+	    
+	   //Upgrade mobile detect to v3.74.3 - Jason	
+	   
         if($deviceType !== 'computer') {
             if($deviceType =='tablet') {
                 if($this->getConf('tablet_alt')) return 'phone';
@@ -172,22 +181,28 @@ class action_plugin_sectiontoggle extends DokuWiki_Action_Plugin {
       return false;		
 	}	
 
-function normalize_names($str,$ns = false) {
-    $ar = array();
-     $str = preg_replace("/\s+/", "",$str);
-        $names = explode(',',$str);
-        for ($i = 0; $i < count($names); $i++) {
-            $names[$i] = preg_replace("/^\s?:\s?/", ":",$names[$i]);
-            $names[$i] = trim ($names[$i]);
-            if($names[$i] != ':') $names[$i] = trim ($names[$i],':');
-        if ($ns && !empty($names[$i])) $names[$i].= ":";
-			
-        if($names[$i])
-        {   
-            $ar[] = $names[$i];
-         }
+    function normalize_names($str,$ns = false) {
+        $ar = array();
+        $str = preg_replace("/\s+/", "",$str);
+            $names = explode(',',$str);
+            for ($i = 0; $i < count($names); $i++) {
+                $names[$i] = preg_replace("/^\s?:\s?/", ":",$names[$i]);
+                $names[$i] = trim ($names[$i]);
+                if($names[$i] != ':') $names[$i] = trim ($names[$i],':');
+            if ($ns && !empty($names[$i])) $names[$i].= ":";
+                
+            if($names[$i])
+            {   
+                $ar[] = $names[$i];
+            }
+        }
+        return $ar;
     }
-    return $ar;
-}
 
+    public function add_button_toggle(Doku_Event $event) {
+        if($event->data['view'] != 'page') return;
+        if($this->getConf('show_section_toggle_button')) {
+            array_splice($event->data['items'], -1, 0, [new \dokuwiki\plugin\sectiontoggle\MenuItemSectionToggle()]);
+        }
+    }
 }
