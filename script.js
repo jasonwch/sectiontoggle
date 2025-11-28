@@ -7,8 +7,13 @@ function escapeRegExp (expr) {
 }
 
 // Mark headers between stoggle_exclude_start and stoggle_exclude_end as excluded
+// Also mark headers outside <!-- wikipage start/stop --> or inside <!-- TOC START/END -->
+// Also exclude headers inside comment_wrapper divs
 function markExcludedHeaders() {
   var inExcludeZone = false;
+  var inWikipage = false;
+  var inTOC = false;
+  var inCommentWrapper = false;
   
   // Get all elements in document order within the content area
   var contentArea = jQuery('#dokuwiki__content').first();
@@ -16,16 +21,68 @@ function markExcludedHeaders() {
     contentArea = jQuery('body');
   }
   
-  // Walk through all elements to find markers and headers
-  contentArea.find('*').each(function() {
-    var $el = jQuery(this);
-    if ($el.hasClass('stoggle_exclude_start')) {
-      inExcludeZone = true;
-    } else if ($el.hasClass('stoggle_exclude_end')) {
-      inExcludeZone = false;
-    } else if (inExcludeZone && $el.is(':header')) {
-      $el.addClass('stoggle_no_collapse');
+  // Walk through all nodes (including comment nodes) to find markers
+  function walkNodes(node) {
+    var child = node.firstChild;
+    while (child) {
+      // Check for HTML comments
+      if (child.nodeType === 8) { // Node.COMMENT_NODE
+        var commentText = child.nodeValue.trim();
+        
+        // Check for wikipage markers
+        if (commentText === 'wikipage start') {
+          inWikipage = true;
+        } else if (commentText === 'wikipage stop') {
+          inWikipage = false;
+        }
+        // Check for TOC markers
+        else if (commentText === 'TOC START') {
+          inTOC = true;
+        } else if (commentText === 'TOC END') {
+          inTOC = false;
+        }
+      }
+      // Check for element nodes
+      else if (child.nodeType === 1) { // Node.ELEMENT_NODE
+        // Optimization: Use native DOM API instead of jQuery for performance
+        
+        // Check for stoggle exclude markers
+        if (child.classList.contains('stoggle_exclude_start')) {
+          inExcludeZone = true;
+        } else if (child.classList.contains('stoggle_exclude_end')) {
+          inExcludeZone = false;
+        }
+        
+        // Check for comment_wrapper div (track entry and exit)
+        if (child.classList.contains('comment_wrapper')) {
+          inCommentWrapper = true;
+          // Process children of comment_wrapper
+          walkNodes(child);
+          inCommentWrapper = false;
+          // Skip to next sibling without processing children again
+          child = child.nextSibling;
+          continue;
+        }
+        
+        // Mark headers that should not be collapsed:
+        // Check if it is a header (H1-H6)
+        if (/^H[1-6]$/.test(child.tagName)) {
+          if (inExcludeZone || !inWikipage || inTOC || inCommentWrapper) {
+            child.classList.add('stoggle_no_collapse');
+          }
+        }
+        
+        // Recursively walk child nodes
+        walkNodes(child);
+      }
+      
+      child = child.nextSibling;
     }
+  }
+  
+  // Start walking from the content area
+  contentArea.each(function() {
+    walkNodes(this);
   });
 }
 
@@ -66,102 +123,118 @@ jQuery("ul.toc li div.li a, ul.toc li a").click(function(){
       jQuery(id).next().toggle()
 }); 
 }          
-         jQuery(SectionToggle.headers).each(function(index,elem ) {         
-               if( typeof(jQuery(elem).next().html())  === 'undefined') return; 
-//exclusion add - jason
-
-			   if(jQuery(elem).hasClass("toggle")) return;
-			   if(jQuery(elem).hasClass("sr-only")) return;
-			   if(jQuery(elem).hasClass("stoggle_no_collapse")) return;
-			   if(jQuery(elem).attr("id") === "login") return;
-			   if(jQuery(elem).attr("id") === "permission_denied") return;
-			   if(jQuery(elem).parent().prop("className") === "comment_wrapper") return;
-
-
-//exclusion add - jason					 
-			 
+         // Optimization: Use native forEach instead of jQuery.each
+         // Cache h_ini_open for repeated use
+         var hIniOpen = JSINFO['h_ini_open'] || '';
+         
+         SectionToggle.headers.forEach(function(elem, index) {         
+               // Optimization: Native check for next element
+               if (!elem.nextElementSibling) return;
+               
+		       // Skip headers marked for no collapse
+		       if(elem.classList.contains("stoggle_no_collapse")) return;
+		 
 		       var skip = false;
-			   var regex;
-               var hash = jQuery(elem).html().replace(/\s/g, "_"); 
-               regex = RegExp('\\b' + escapeRegExp(hash.toLowerCase()) + '\\b');  
-			   
-		       if(hash.toLowerCase() == SectionToggle.hash || regex.test(JSINFO['h_ini_open'])) {
+               // Optimization: Native textContent is faster than innerHTML for text
+               var hash = elem.textContent.replace(/\s/g, "_"); 
+               var hashLower = hash.toLowerCase();
+               
+		       if(hashLower == SectionToggle.hash || (hIniOpen && RegExp('\\b' + escapeRegExp(hashLower) + '\\b').test(hIniOpen))) {
                    skip = true;
                }
-			   else if(SectionToggle.hash){				   
-                  regex = RegExp('^' +SectionToggle.hash,'i');  //bootstrap3
-				  if(regex.test(hash)) {
-					 skip = true;					 
-				  }
+			   else if(SectionToggle.hash && hashLower.indexOf(SectionToggle.hash) === 0) {
+				   skip = true;
 		       }
 	
-               if(SectionToggle.is_active && jQuery(elem).next().html().match(/\w/))  {
-                   this.onclick=function() {
-                   SectionToggle.checkheader(elem,index);
-                };     
+               // Optimization: Native check for content
+               var nextSib = elem.nextElementSibling;
+               if(SectionToggle.is_active && /\w/.test(nextSib.textContent))  {
+                   elem.onclick = function() {
+                       SectionToggle.checkheader(elem, index);
+                   };     
           
-                this.onmouseover = elem.style.cursor='pointer';
-                var $class = 'st_closed header__' + index;
-                jQuery(this).addClass($class);         
-                 if(skip)  {
-                      jQuery(elem).removeClass('st_closed').addClass('st_opened');
-                }   
+                   elem.style.cursor = 'pointer';
+                   // Optimization: Native classList
+                   elem.classList.add('st_closed', 'header__' + index);
+                
+                   if(skip) {
+                       // Optimization: Native classList
+                       elem.classList.remove('st_closed');
+                       elem.classList.add('st_opened');
+                   }   
                
-                /* add toggle icon and  hide data below this header */
+                   /* add toggle icon and hide data below this header */
 				
-				/* correct closing except toggle class headers - Jason */
-                //if(!this.getAttribute('class').match(/toggle/)) {
-				if (
-					this.getAttribute("class") &&
-					!this.getAttribute("class").match(/toggle/)
-				) {
-                     jQuery(elem).next().toggle();
-                     if(skip)  jQuery(elem).next().toggle();
+				   /* correct closing except toggle class headers - Jason */
+				   if (elem.className && !elem.className.match(/toggle/)) {
+                       // Optimization: Native style toggle
+                       nextSib.style.display = 'none';
+                       if(skip) nextSib.style.display = '';
+                   }
                }
-              }
-          if(JSINFO['start_open'])  {
+        });
+        
+        // Optimization: Move open_all call outside the loop - only call once
+        if(JSINFO['start_open']) {
             SectionToggle.open_all();
         }
-              
-
-        });
     }
 });
 var SectionToggle = {
   checkheader: function (el, index) {
-    var classes = el.getAttribute("class");
-    if (!classes.match(/(header__\d+)/)) return;
+    var classes = el.className;
+    if (!classes || !classes.match(/(header__\d+)/)) return;
 
-    jQuery(el).toggleClass("st_closed st_opened");
-    jQuery(el).next().toggle();
+    // Optimization: Native class and style manipulation
+    el.classList.toggle("st_closed");
+    el.classList.toggle("st_opened");
+    
+    // Toggle next sibling visibility
+    var next = el.nextElementSibling;
+    if (next) {
+      next.style.display = next.style.display === 'none' ? '' : 'none';
+    }
   },
 
   open_all: function () {
-    jQuery(this.headers).each(function (index, elem) {	  
+    // Optimization: Use native forEach and style manipulation
+    var headers = this.headers;
+    for (var i = 0; i < headers.length; i++) {
+      var elem = headers[i];
       if (
-        this.getAttribute("class") &&
-        !this.getAttribute("class").match(/toggle/) &&
-        !jQuery(elem).hasClass("stoggle_no_collapse")
+        elem.className &&
+        !elem.className.match(/toggle/) &&
+        !elem.classList.contains("stoggle_no_collapse")
       ) {
-        jQuery(elem).removeClass("st_closed").addClass("st_opened");
-        jQuery(elem).next().show();
+        elem.classList.remove("st_closed");
+        elem.classList.add("st_opened");
+        // Optimization: Native style manipulation
+        if (elem.nextElementSibling) {
+          elem.nextElementSibling.style.display = '';
+        }
       }
-    });
+    }
   },
 
   close_all: function () {
-    jQuery(this.headers).each(function (index, elem) {
-	/* correct closing except toggle class headers - Jason */
-      //if (!this.getAttribute("class").match(/toggle/)) {
-		if (
-        this.getAttribute("class") &&
-        !this.getAttribute("class").match(/toggle/) &&
-        !jQuery(elem).hasClass("stoggle_no_collapse")
+    // Optimization: Use native for loop and style manipulation
+    var headers = this.headers;
+    for (var i = 0; i < headers.length; i++) {
+      var elem = headers[i];
+      /* correct closing except toggle class headers - Jason */
+      if (
+        elem.className &&
+        !elem.className.match(/toggle/) &&
+        !elem.classList.contains("stoggle_no_collapse")
       ) {
-        jQuery(elem).removeClass("st_opened").addClass("st_closed");
-        jQuery(elem).next().hide();
+        elem.classList.remove("st_opened");
+        elem.classList.add("st_closed");
+        // Optimization: Native style manipulation
+        if (elem.nextElementSibling) {
+          elem.nextElementSibling.style.display = 'none';
+        }
       }
-    });
+    }
   },
   check_status: function () {
     if (JSINFO.se_platform == "n") return;
@@ -207,31 +280,26 @@ var SectionToggle = {
 
     // JSINFO['no_ini'] = 1;
     if (JSINFO["no_ini"]) {
-      var qstr = "";
-
-      jQuery(":header").each(function (index, elem) {
-        var $id,
-          $class = jQuery(this).attr("class");
-        var tagname = jQuery(this).prop("tagName").toLowerCase();
-        matches = tagname.match(/h(\d)/);
-        if (matches[1] > JSINFO["se_headers"] || xclheaders[matches[1]]) return;
+      var headerElements = [];
+      // Optimization: Use native querySelectorAll for better performance
+      var allHeaders = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+      
+      for (var i = 0; i < allHeaders.length; i++) {
+        var elem = allHeaders[i];
+        var tagName = elem.tagName.toLowerCase();
+        var level = parseInt(tagName.substring(1));
+        
+        if (level > JSINFO["se_headers"] || xclheaders[level]) continue;
         // Skip headers marked for exclusion
-        if (jQuery(this).hasClass('stoggle_no_collapse')) return;
-
-        if ($class) {
-          if ($class.match(/sr-only|toggle/)) return;
-          var $classes = $class.match(/sectionedit\d+/);
-          if ($classes) {
-            tagname = tagname + "." + $classes[0];
-          }
-        } else {
-          $id = jQuery(this).attr("id");
-          tagname = tagname + "#" + $id;
+        if (elem.classList.contains('stoggle_no_collapse')) continue;
+        
+        if (elem.className) {
+           if (elem.className.match(/sr-only|toggle/)) continue;
         }
-        if (qstr) qstr += ",";
-        qstr += tagname;
-      });
-      this.headers = qstr;
+        
+        headerElements.push(elem);
+      }
+      this.headers = headerElements;
       return;
     }
 
@@ -244,7 +312,13 @@ var SectionToggle = {
       if (i < nheaders - 1) id_string += ",";
     }
     id_string = id_string.replace(/,+$/, "");
-    this.headers = id_string;
+    
+    // Optimization: Convert selector string to element array
+    if (id_string) {
+        this.headers = jQuery(id_string).toArray();
+    } else {
+        this.headers = [];
+    }
 
     this.toc_xcl = this.toc_xcl.replace(/,+$/, "");
     jQuery(this.toc_xcl).each(function (index, elem) {
@@ -280,15 +354,34 @@ function icke_OnMobileFix() {
 	var MOBILE_WIDTH = 600;
 	var SHALLOWST_SECTION_TO_HIDE = 2;
 	var DEEPEST_SECTION_TO_HIDE = 6;
-	var i;
-	var $page;
-	if (jQuery(window).width() <= MOBILE_WIDTH) {
-		$page = jQuery('div.page');
-		for (i = SHALLOWST_SECTION_TO_HIDE; i < DEEPEST_SECTION_TO_HIDE; i += 1) {
-			$page.find('div.level' + i).show();
-			$page.find('h' + i).click(function toggleSection() {
-				jQuery(this).next('div').toggle();
-			});
+	
+	if (window.innerWidth <= MOBILE_WIDTH) {
+		var page = document.querySelector('div.page');
+		if (!page) return;
+		
+		// Build selector for all levels at once
+		var levelSelectors = [];
+		var headerSelectors = [];
+		for (var i = SHALLOWST_SECTION_TO_HIDE; i < DEEPEST_SECTION_TO_HIDE; i++) {
+			levelSelectors.push('div.level' + i);
+			headerSelectors.push('h' + i);
+		}
+		
+		// Show all level divs
+		var levelDivs = page.querySelectorAll(levelSelectors.join(','));
+		for (var j = 0; j < levelDivs.length; j++) {
+			levelDivs[j].style.display = '';
+		}
+		
+		// Use event delegation for headers
+		var headers = page.querySelectorAll(headerSelectors.join(','));
+		for (var k = 0; k < headers.length; k++) {
+			headers[k].onclick = function() {
+				var nextDiv = this.nextElementSibling;
+				if (nextDiv && nextDiv.tagName === 'DIV') {
+					nextDiv.style.display = nextDiv.style.display === 'none' ? '' : 'none';
+				}
+			};
 		}
 	}
 };
