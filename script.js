@@ -127,6 +127,9 @@ jQuery("ul.toc li div.li a, ul.toc li a").click(function(){
          // Cache h_ini_open for repeated use
          var hIniOpen = JSINFO['h_ini_open'] || '';
          
+         // Safety check: ensure headers is an array before iterating
+         if (!Array.isArray(SectionToggle.headers)) return;
+         
          SectionToggle.headers.forEach(function(elem, index) {         
                // Optimization: Native check for next element
                if (!elem.nextElementSibling) return;
@@ -343,7 +346,7 @@ var SectionToggle = {
   },
 
   toggleState: "open",
-  headers: "",
+  headers: [],
   toc_xcl: "",
   device_class: "desktop",
   is_active: false,
