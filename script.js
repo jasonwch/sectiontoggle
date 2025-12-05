@@ -114,11 +114,22 @@ markExcludedHeaders();
           
 if(SectionToggle.is_active && !JSINFO['toc_xcl']) {
 jQuery("ul.toc li div.li a, ul.toc li a").click(function(){
-      var text = jQuery(this).html();	
-      text = text.toLowerCase();
-      text =  text.replace(/\s/g, "_");  
-      if(SectionToggle.toc_xcl.indexOf(text) > -1) return;
-      var id = '#' + text; 
+      // Use the actual href attribute to get the correct header ID
+      // This fixes issues where DokuWiki's sectionID() generates IDs differently
+      var href = jQuery(this).attr('href');
+      var id = href ? href : '';
+      
+      // Fallback to text-based ID if href is not available
+      if (!id || !id.startsWith('#')) {
+          var text = jQuery(this).text();
+          text = text.toLowerCase();
+          text = text.replace(/\s/g, "_");
+          id = '#' + text;
+      }
+      
+      var idWithoutHash = id.replace(/^#/, '').toLowerCase();
+      if(SectionToggle.toc_xcl.indexOf(idWithoutHash) > -1) return;
+      
       jQuery(id).toggleClass('st_closed st_opened');
       jQuery(id).next().toggle()
 }); 
@@ -142,10 +153,15 @@ jQuery("ul.toc li div.li a, ul.toc li a").click(function(){
                var hash = elem.textContent.replace(/\s/g, "_"); 
                var hashLower = hash.toLowerCase();
                
-		       if(hashLower == SectionToggle.hash || (hIniOpen && RegExp('\\b' + escapeRegExp(hashLower) + '\\b').test(hIniOpen))) {
+               // Use header's actual id attribute for comparison with URL hash
+               // This fixes redirect after section edit - DokuWiki uses sectionID() which
+               // generates IDs differently than simple text replacement
+               var headerId = elem.id ? elem.id.toLowerCase() : '';
+               
+		       if(hashLower == SectionToggle.hash || headerId == SectionToggle.hash || (hIniOpen && RegExp('\\b' + escapeRegExp(hashLower) + '\\b').test(hIniOpen))) {
                    skip = true;
                }
-			   else if(SectionToggle.hash && hashLower.indexOf(SectionToggle.hash) === 0) {
+			   else if(SectionToggle.hash && (hashLower.indexOf(SectionToggle.hash) === 0 || (headerId && headerId.indexOf(SectionToggle.hash) === 0))) {
 				   skip = true;
 		       }
 	
